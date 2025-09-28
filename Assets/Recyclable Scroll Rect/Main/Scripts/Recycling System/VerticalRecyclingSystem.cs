@@ -92,97 +92,107 @@ namespace PolyAndCode.UI
         /// <summary>
         /// Creates cell Pool for recycling, Caches ICells
         /// </summary>
+        /// <summary>
+        /// Creates cell pool for recycling, caches ICells using existing child elements of Content.
+        /// </summary>
         private void CreateCellPool()
         {
-            //Reseting Pool
+            // Reset pools
             if (_cellPool != null)
             {
-                _cellPool.ForEach((RectTransform item) => UnityEngine.Object.Destroy(item.gameObject));
                 _cellPool.Clear();
                 _cachedCells.Clear();
             }
             else
             {
-                _cachedCells = new List<ICell>();
                 _cellPool = new List<RectTransform>();
+                _cachedCells = new List<ICell>();
             }
 
-            //Set the prototype cell active and set cell anchor as top 
+            // Activate prototype to calculate size
             PrototypeCell.gameObject.SetActive(true);
             if (IsGrid)
-            {
                 SetTopLeftAnchor(PrototypeCell);
-            }
             else
-            {
                 SetTopAnchor(PrototypeCell);
-            }
 
-            //Reset
-            _topMostCellColoumn = _bottomMostCellColoumn = 0;
-
-            //Temps
-            float currentPoolCoverage = 0;
-            int poolSize = 0;
-            float posX = 0;
-            float posY = 0;
-
-            //set new cell size according to its aspect ratio
+            // Calculate cell dimensions
             _cellWidth = Content.rect.width / _coloumns;
             _cellHeight = PrototypeCell.sizeDelta.y / PrototypeCell.sizeDelta.x * _cellWidth;
 
-            //Get the required pool coverage and mininum size for the Cell pool
-            float requriedCoverage = MinPoolCoverage * Viewport.rect.height;
-            int minPoolSize = Math.Min(MinPoolSize, DataSource.GetItemCount());
+            _topMostCellColoumn = _bottomMostCellColoumn = 0;
 
-            //create cells untill the Pool area is covered and pool size is the minimum required
-            while ((poolSize < minPoolSize || currentPoolCoverage < requriedCoverage) && poolSize < DataSource.GetItemCount())
+            float posX = 0;
+            float posY = 0;
+            int poolSize = 0;
+
+            // Total items from datasource
+            int totalItems = DataSource.GetItemCount();
+
+            // Determine pool size: at least 1, max total items
+            int actualPoolSize = Math.Min(Math.Max(1, 5), totalItems); // 5 = default minPoolSize
+
+            // Initialize cells using existing children
+            for (int i = 0; i < Content.childCount && poolSize < actualPoolSize; i++)
             {
-                //Instantiate and add to Pool
-                RectTransform item = (UnityEngine.Object.Instantiate(PrototypeCell.gameObject)).GetComponent<RectTransform>();
-                item.name = "Cell";
-                item.sizeDelta = new Vector2(_cellWidth, _cellHeight);
-                _cellPool.Add(item);
-                item.SetParent(Content, false);
+                RectTransform item = Content.GetChild(i).GetComponent<RectTransform>();
+                ICell cell = item.GetComponent<ICell>();
 
-                if (IsGrid)
+                if (item != null && cell != null)
                 {
-                    posX = _bottomMostCellColoumn * _cellWidth;
-                    item.anchoredPosition = new Vector2(posX, posY);
-                    if (++_bottomMostCellColoumn >= _coloumns)
+                    item.gameObject.SetActive(true); // Enable cell
+
+                    // Configure size and add to pool
+                    item.sizeDelta = new Vector2(_cellWidth, _cellHeight);
+                    _cellPool.Add(item);
+                    _cachedCells.Add(cell);
+
+                    // Position cell
+                    if (IsGrid)
                     {
-                        _bottomMostCellColoumn = 0;
-                        posY -= _cellHeight;
-                        currentPoolCoverage += item.rect.height;
+                        SetTopLeftAnchor(item);
+                        posX = _bottomMostCellColoumn * _cellWidth;
+                        item.anchoredPosition = new Vector2(posX, posY);
+
+                        if (++_bottomMostCellColoumn >= _coloumns)
+                        {
+                            _bottomMostCellColoumn = 0;
+                            posY -= _cellHeight;
+                        }
                     }
-                }
-                else
-                {
-                    item.anchoredPosition = new Vector2(0, posY);
-                    posY = item.anchoredPosition.y - item.rect.height;
-                    currentPoolCoverage += item.rect.height;
-                }
+                    else
+                    {
+                        SetTopAnchor(item);
+                        item.anchoredPosition = new Vector2(0, posY);
+                        posY -= _cellHeight;
+                    }
 
-                //Setting data for Cell
-                _cachedCells.Add(item.GetComponent<ICell>());
-                DataSource.SetCell(_cachedCells[_cachedCells.Count - 1], poolSize);
-
-                //Update the Pool size
-                poolSize++;
+                    // Set data
+                    DataSource.SetCell(cell, poolSize);
+                    poolSize++;
+                }
             }
 
-            //TODO : you alrady have a _currentColoumn varaiable. Why this calculation?????
+            // Update bottom-most column for grid
             if (IsGrid)
-            {
                 _bottomMostCellColoumn = (_bottomMostCellColoumn - 1 + _coloumns) % _coloumns;
-            }
 
-            //Deactivate prototype cell if it is not a prefab(i.e it's present in scene)
+            // Deactivate prototype if in scene
             if (PrototypeCell.gameObject.scene.IsValid())
-            {
                 PrototypeCell.gameObject.SetActive(false);
+
+            // Adjust content height to fill viewport even if only 1 cell exists
+            int noOfRows = Mathf.Max(1, Mathf.CeilToInt((float)poolSize / _coloumns));
+            float contentHeight = Mathf.Max(noOfRows * _cellHeight, Viewport.rect.height);
+            Content.sizeDelta = new Vector2(Content.sizeDelta.x, contentHeight);
+
+            // Disable any unused child cells to prevent overlap
+            for (int i = poolSize; i < Content.childCount; i++)
+            {
+                Content.GetChild(i).gameObject.SetActive(false);
             }
         }
+
         #endregion
 
         #region RECYCLING

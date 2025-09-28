@@ -19,20 +19,22 @@ namespace MyProject
         [Header("UI Elements")]
         [SerializeField] private GameObject _loadingScreen;  // Assign your loading panel
 
-        private readonly string url = "https://10.62.159.216:5227/api/images/?";
+        private readonly string url = "http://localhost:5227/api/images/?";
 
         [SerializeField] private List<ImageItem> _imageData = new();
         [SerializeField] private int _currentPage = 1;
+        private float _lastY = 1f;
 
         private bool _isLoading = false;
         private bool _hasMoreData = true;
         private bool _nextPageTriggered = false; // Prevent multiple triggers
+        private bool _initialized = false;
 
         private void Awake() => Application.targetFrameRate = 60;
 
         private void Start()
         {
-            _recyclableScrollRect.Initialize(this);
+            //_recyclableScrollRect.Initialize(this);
             _recyclableScrollRect.onValueChanged.AddListener(OnScrollValueChanged);
             StartCoroutine(FetchImages(_currentPage, _itemsPerPage));
         }
@@ -40,12 +42,13 @@ namespace MyProject
 
         private IEnumerator FetchImages(int page, int limit)
         {
+            Debug.Log($"Fetching page {page} with limit {limit}");
+
             if (_isLoading || !_hasMoreData) yield break;
             _isLoading = true;
 
             // Show loading screen for first page
-            if (_loadingScreen != null)
-                _loadingScreen.SetActive(true);
+            _loadingScreen?.SetActive(true);
 
             float minLoadingTime = 2.5f;
             float startTime = Time.time;
@@ -75,6 +78,12 @@ namespace MyProject
                     foreach (var img in imageList.images)
                         _imageData.Add(new ImageItem { url = img.url, number = img.number });
 
+                    if (!_initialized)
+                    {
+                        _recyclableScrollRect.Initialize(this);
+                        _initialized = true;
+                    }
+
                     _currentPage++;
                     //_recyclableScrollRect.ReloadData();
 
@@ -91,24 +100,27 @@ namespace MyProject
             _isLoading = false;
             _nextPageTriggered = false;
 
-            if (_loadingScreen != null)
-                _loadingScreen.SetActive(false);
+            _loadingScreen?.SetActive(false);
         }
 
 
         private void OnScrollValueChanged(Vector2 normalizedPosition)
         {
+            float verticalPos = normalizedPosition.y;
+
             if (_hasMoreData && !_isLoading && !_nextPageTriggered)
             {
-                // Check if we need to fetch the next page
-                float verticalPos = normalizedPosition.y;
-                if (verticalPos <= 0.1f) // Near bottom
+                // Only trigger if scrolling downward and near bottom
+                if (verticalPos <= 0.1f && verticalPos < _lastY)
                 {
                     _nextPageTriggered = true;
                     StartCoroutine(FetchImages(_currentPage, _itemsPerPage));
                 }
             }
+
+            _lastY = verticalPos;
         }
+
 
         public int GetItemCount() => _imageData.Count;
 
